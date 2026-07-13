@@ -73,13 +73,12 @@ else:
             conn.commit()
             st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
         
-        # 3. REPORTS & DOWNLOAD (Dashboard-ka dhammaystiran)
+        # 3. REPORTS & DOWNLOAD
         st.subheader("📋 Reports & Diiwaanka")
         try:
             attendance_data = pd.read_sql_query("SELECT * FROM attendance", conn)
             st.dataframe(attendance_data, use_container_width=True)
             
-            # Download CSV
             csv = attendance_data.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Diiwaanka (CSV)", csv, "attendance_report.csv", "text/csv")
         except:
@@ -91,11 +90,15 @@ else:
     else:
         st.title("🏢 Bogga Shaqaalaha")
         st.write(f"Soo dhowoow, {st.session_state['username']}")
+        
         img_file = st.camera_input("Fadlan is-sawir (Selfie)")
-        if img_file and st.button("Xaqiiji Check-in"):
-            conn = get_db_connection()
-            conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
-                         (st.session_state['username'], datetime.now()))
-            conn.commit()
-            conn.close()
-            st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
+        
+        if img_file:
+            st.success("Sawirkaaga waa la qabtay!")
+            if st.button("Xaqiiji Check-in"):
+                conn = get_db_connection()
+                conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
+                             (st.session_state['username'], datetime.now()))
+                conn.commit()
+                conn.close()
+                st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")

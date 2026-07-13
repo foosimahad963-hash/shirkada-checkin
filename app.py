@@ -70,14 +70,20 @@ else:
             all_users = pd.read_sql_query("SELECT username, password FROM users", conn)
             st.table(all_users)
         
-        # 2. Reset Device
+        # 2. Reset Device (Qaybtan waa la hagaajiyay si aysan u dhicin)
         st.subheader("🔄 Reset Moobilka Shaqaalaha")
-        users_df = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)
-        emp_to_reset = st.selectbox("Dooro shaqaale", users_df['username'])
-        if st.button("Reset Device ID"):
-            conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
-            conn.commit()
-            st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
+        try:
+            users_df = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)
+            emp_to_reset = st.selectbox("Dooro shaqaale", users_df['username'])
+            if st.button("Reset Device ID"):
+                try:
+                    conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
+                    conn.commit()
+                    st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
+                except Exception as e:
+                    st.warning("⚠️ Cloud-ka ayaa diiday inuu kaydiyo. Fadlan hubi in Database-kaagu yahay mid la qori karo.")
+        except Exception as e:
+            st.error("Ma jiro shaqaale la heli karo.")
         
         # 3. REPORTS & DOWNLOAD
         st.subheader("📋 Reports & Diiwaanka")
@@ -103,7 +109,6 @@ else:
             st.success("Sawirkaaga waa la qabtay!")
             if st.button("Xaqiiji Check-in"):
                 conn = get_db_connection()
-                # Halkan waxaa la isticmaalay get_somalia_time()
                 conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
                              (st.session_state['username'], get_somalia_time()))
                 conn.commit()

@@ -6,8 +6,7 @@ import uuid
 import pytz
 import cv2
 import numpy as np
-import smtplib
-from email.message import EmailMessage
+import requests
 
 # --- DATABASE (Scalability: Indexed columns) ---
 def get_db_connection():
@@ -16,14 +15,19 @@ def get_db_connection():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_user ON attendance(username)") 
     return conn
 
-# --- AUTOMATION: Email Notification ---
-def send_email_notification(username, time):
-    msg = EmailMessage()
-    msg.set_content(f"Shaqaale {username} wuxuu Check-in sameeyay wakhtiga: {time}")
-    msg['Subject'] = 'Check-in Notification'
-    msg['From'] = 'shirkada@email.com'
-    msg['To'] = 'admin@shirkada.com'
-    # Fiiro gaar ah: Ku buuxi settings-ka SMTP halkan haddii aad rabto inuu si toos ah u baxo
+# --- AUTOMATION: WhatsApp Notification ---
+def send_whatsapp_notification(username, time):
+    # Waa inaad ka heshaa Token iyo Instance ID bogga ultramsg.com
+    api_url = "https://api.ultramsg.com/instanceXXXXX/messages/chat" 
+    payload = {
+        "token": "Geli_Token_kaaga_halkan",
+        "to": "+252637281967", 
+        "body": f"⚠️ Digniin: Shaqaale {username} wuxuu Check-in sameeyay wakhtiga: {time}"
+    }
+    try:
+        requests.post(api_url, data=payload)
+    except:
+        pass # Hadii internetku maqan yahay app-ku ha istaagin
 
 # --- SECURITY: Advanced Wall Recognition ---
 def is_valid_wall(img_file):
@@ -53,8 +57,6 @@ if not st.session_state.get('logged_in', False):
         if user:
             role = user[3]
             st.session_state.update({'logged_in': True, 'username': user[1], 'role': role})
-            
-            # Device Lock check
             if role != 'admin':
                 stored_device = user[4]
                 if stored_device is None:
@@ -110,7 +112,7 @@ else:
                                  (st.session_state['username'], time_now))
                     conn.commit()
                     conn.close()
-                    send_email_notification(st.session_state['username'], time_now)
+                    send_whatsapp_notification(st.session_state['username'], time_now)
                     st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
                 else:
                     st.error("❌ Khalad! Uma muuqato inaad hor taagan tahay Gidaarkii saxda ah.")

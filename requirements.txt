@@ -3,3 +3,5 @@ pandas
 pytz
 gspread
 oauth2client 
+opencv-python
+numpy

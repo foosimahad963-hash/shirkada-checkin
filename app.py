@@ -7,6 +7,7 @@ import pytz
 import cv2
 import numpy as np
 import requests
+import face_recognition # Waa inuu ku jiraa requirements.txt
 
 # --- DATABASE (Scalability: Indexed columns) ---
 def get_db_connection():
@@ -17,7 +18,6 @@ def get_db_connection():
 
 # --- AUTOMATION: WhatsApp Notification ---
 def send_whatsapp_notification(username, time):
-    # Waa inaad ka heshaa Token iyo Instance ID bogga ultramsg.com
     api_url = "https://api.ultramsg.com/instanceXXXXX/messages/chat" 
     payload = {
         "token": "Geli_Token_kaaga_halkan",
@@ -27,15 +27,34 @@ def send_whatsapp_notification(username, time):
     try:
         requests.post(api_url, data=payload)
     except:
-        pass # Hadii internetku maqan yahay app-ku ha istaagin
+        pass
 
-# --- SECURITY: Advanced Wall Recognition ---
-def is_valid_wall(img_file):
+# --- SECURITY: Face Matching + Wall Check ---
+def is_valid_checkin(img_file, username):
+    # 1. Loading images
     file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
     user_img = cv2.imdecode(file_bytes, 1)
+    user_rgb = cv2.cvtColor(user_img, cv2.COLOR_BGR2RGB)
+    
+    # 2. Gidaar hubin (Canny)
     gray = cv2.cvtColor(user_img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 100, 200)
-    return np.mean(edges) < 50 
+    is_wall_valid = np.mean(edges) < 50
+    
+    # 3. Face Matching
+    try:
+        stored_image_path = f"images/{username}.jpg"
+        stored_img = face_recognition.load_image_file(stored_image_path)
+        
+        user_encodings = face_recognition.face_encodings(user_rgb)
+        stored_encodings = face_recognition.face_encodings(stored_img)
+        
+        if len(user_encodings) > 0 and len(stored_encodings) > 0:
+            results = face_recognition.compare_faces([stored_encodings[0]], user_encodings[0])
+            return is_wall_valid and results[0]
+        return False
+    except:
+        return False
 
 # --- APP SETUP ---
 st.set_page_config(page_title="Nidaamka Shaqaalaha", page_icon="🏢")
@@ -101,11 +120,11 @@ else:
     else:
         st.title("🏢 Bogga Shaqaalaha")
         st.write(f"Soo dhowoow, {st.session_state['username']}")
-        img_file = st.camera_input("Fadlan is-sawir (Selfie)")
+        img_file = st.camera_input("Fadlan is-sawir adigoo hor taagan Goobta")
         
         if img_file:
             if st.button("Xaqiiji Check-in"):
-                if is_valid_wall(img_file):
+                if is_valid_checkin(img_file, st.session_state['username']):
                     time_now = datetime.now(pytz.timezone('Africa/Mogadishu')).strftime('%Y-%m-%d %H:%M:%S')
                     conn = get_db_connection()
                     conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
@@ -113,6 +132,6 @@ else:
                     conn.commit()
                     conn.close()
                     send_whatsapp_notification(st.session_state['username'], time_now)
-                    st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
+                    st.success("✅ Waji iyo Goob waa la aqoonsaday! Check-in-kaaga waa diiwaan.")
                 else:
-                    st.error("❌ Khalad! Uma muuqato inaad hor taagan tahay Gidaarkii saxda ah.")
+                    st.error("❌ Khalad! Wajigaaga ama Goobta laguma aqoonsan.")

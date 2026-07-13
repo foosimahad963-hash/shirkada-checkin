@@ -1,5 +1,7 @@
+streamlit
 opencv-python-headless
 numpy
 pandas
 pytz
-face_recognition
+requests
+face-recognition

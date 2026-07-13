@@ -27,15 +27,11 @@ if not st.session_state.get('logged_in', False):
         user = c.fetchone()
         
         if user:
-            # HUBINTA LOGIC-GA LOGIN-KA
             is_admin = (user_input == 'admin')
-            
             if is_admin:
-                # Admin: device_id lama hubinayo
                 st.session_state.update({'logged_in': True, 'username': user[1], 'role': user[3]})
                 st.rerun()
             else:
-                # Shaqaale: device_id waa la hubinayaa
                 stored_device = user[4] 
                 if stored_device is None:
                     c.execute("UPDATE users SET device_id=? WHERE username=?", (st.session_state['device_id'], user_input))
@@ -52,38 +48,49 @@ if not st.session_state.get('logged_in', False):
         conn.close()
 
 else:
-    # --- DASHBOARD & VIEW ---
+    # --- SIDEBAR ---
     if st.sidebar.button("Ka Bax"):
         st.session_state.clear()
         st.rerun()
 
-    # ADMIN VIEW
+    # --- ADMIN VIEW ---
     if st.session_state.get('role') == 'admin':
         st.title("📊 Dashboard-ka Maamulka")
         conn = get_db_connection()
         
-        # Qaybta Password-ka ee lagu daray
+        # 1. Furayaasha
         st.subheader("🔑 Xogta Shaqaalaha & Furayaasha")
         if st.checkbox("Muuji Furayaasha Shaqaalaha"):
             all_users = pd.read_sql_query("SELECT username, password FROM users", conn)
             st.table(all_users)
         
+        # 2. Reset Device
         st.subheader("🔄 Reset Moobilka Shaqaalaha")
         users_df = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)
         emp_to_reset = st.selectbox("Dooro shaqaale", users_df['username'])
-        
         if st.button("Reset Device ID"):
             conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
             conn.commit()
             st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
         
-        st.subheader("📋 Liiska Qalabka")
-        st.table(pd.read_sql_query("SELECT username, device_id FROM users", conn))
+        # 3. REPORTS & DOWNLOAD (Dashboard-ka dhammaystiran)
+        st.subheader("📋 Reports & Diiwaanka")
+        try:
+            attendance_data = pd.read_sql_query("SELECT * FROM attendance", conn)
+            st.dataframe(attendance_data, use_container_width=True)
+            
+            # Download CSV
+            csv = attendance_data.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Diiwaanka (CSV)", csv, "attendance_report.csv", "text/csv")
+        except:
+            st.warning("Diiwaanka weli xog kuma jiro.")
+        
         conn.close()
 
-    # EMPLOYEE VIEW
+    # --- EMPLOYEE VIEW ---
     else:
         st.title("🏢 Bogga Shaqaalaha")
+        st.write(f"Soo dhowoow, {st.session_state['username']}")
         img_file = st.camera_input("Fadlan is-sawir (Selfie)")
         if img_file and st.button("Xaqiiji Check-in"):
             conn = get_db_connection()

@@ -4,3 +4,4 @@ numpy
 pandas
 pytz
 requests
+face-recognition

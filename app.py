@@ -3,10 +3,16 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import uuid
+import pytz
 
 # --- DATABASE ---
 def get_db_connection():
     return sqlite3.connect('shirkada.db')
+
+# --- WAKHTIGA SOOMAALIYA ---
+def get_somalia_time():
+    somalia_tz = pytz.timezone('Africa/Mogadishu')
+    return datetime.now(somalia_tz).strftime('%Y-%m-%d %H:%M:%S')
 
 # --- APP SETUP ---
 st.set_page_config(page_title="Nidaamka Shaqaalaha", page_icon="🏢")
@@ -97,8 +103,9 @@ else:
             st.success("Sawirkaaga waa la qabtay!")
             if st.button("Xaqiiji Check-in"):
                 conn = get_db_connection()
+                # Halkan waxaa la isticmaalay get_somalia_time()
                 conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
-                             (st.session_state['username'], datetime.now()))
+                             (st.session_state['username'], get_somalia_time()))
                 conn.commit()
                 conn.close()
                 st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")

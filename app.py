@@ -4,6 +4,8 @@ import pandas as pd
 from datetime import datetime
 import uuid
 import pytz
+import cv2
+import numpy as np
 
 # --- DATABASE ---
 def get_db_connection():
@@ -12,6 +14,16 @@ def get_db_connection():
 def get_somalia_time():
     somalia_tz = pytz.timezone('Africa/Mogadishu')
     return datetime.now(somalia_tz).strftime('%Y-%m-%d %H:%M:%S')
+
+# --- GIDAAR HUBIN (Background Verification) ---
+def is_valid_wall(img_file):
+    # Sawirka u beddel qaabka OpenCV
+    file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+    user_img = cv2.imdecode(file_bytes, 1)
+    # Xisaabi celceliska midabka (RGB)
+    avg_color = np.average(np.average(user_img, axis=0), axis=0)
+    # Gidaarkaaga cad/cawlka waa inuu leeyahay midab ka sarreeya 150 (0-255)
+    return avg_color[0] > 150 and avg_color[1] > 150 and avg_color[2] > 150
 
 # --- APP SETUP ---
 st.set_page_config(page_title="Nidaamka Shaqaalaha", page_icon="🏢")
@@ -32,10 +44,8 @@ if not st.session_state.get('logged_in', False):
         user = c.fetchone()
         
         if user:
-            # Hubi role-ka (Admin vs Employee)
             role = user[3]
             st.session_state.update({'logged_in': True, 'username': user[1], 'role': role})
-            
             if role != 'admin':
                 stored_device = user[4]
                 if stored_device is None:
@@ -50,28 +60,19 @@ if not st.session_state.get('logged_in', False):
         conn.close()
 
 else:
-    # --- LOGOUT ---
     if st.sidebar.button("Ka Bax"):
         st.session_state.clear()
         st.rerun()
 
-    # --- ADMIN VIEW ---
     if st.session_state.get('role') == 'admin':
         st.title("📊 Dashboard-ka Maamulka")
         conn = get_db_connection()
-        
         tab1, tab2 = st.tabs(["Diiwaanka Shaqada", "Maamulka Shaqaalaha"])
-        
         with tab1:
-            st.subheader("📋 Diiwaanka")
-            try:
-                attendance_data = pd.read_sql_query("SELECT * FROM attendance ORDER BY check_in_time DESC", conn)
-                st.dataframe(attendance_data, use_container_width=True)
-                csv = attendance_data.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download CSV", csv, "attendance.csv", "text/csv")
-            except:
-                st.warning("Xog ma jirto.")
-
+            attendance_data = pd.read_sql_query("SELECT * FROM attendance ORDER BY check_in_time DESC", conn)
+            st.dataframe(attendance_data, use_container_width=True)
+            csv = attendance_data.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download CSV", csv, "attendance.csv", "text/csv")
         with tab2:
             st.subheader("🔄 Reset Qalabka Shaqaalaha")
             users_list = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)['username'].tolist()
@@ -82,19 +83,21 @@ else:
                 st.success(f"✅ Qalabkii {emp_to_reset} waa la fasaxay.")
         conn.close()
 
-    # --- EMPLOYEE VIEW ---
     else:
         st.title("🏢 Bogga Shaqaalaha")
         st.write(f"Soo dhowoow, {st.session_state['username']}")
+        st.info("⚠️ Fadlan is-sawir adigoo hor taagan Gidaarka cad ee shirkadda.")
         
         img_file = st.camera_input("Fadlan is-sawir (Selfie)")
         
         if img_file:
-            st.success("Sawirkaaga waa la qabtay!")
             if st.button("Xaqiiji Check-in"):
-                conn = get_db_connection()
-                conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
-                             (st.session_state['username'], get_somalia_time()))
-                conn.commit()
-                conn.close()
-                st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
+                if is_valid_wall(img_file):
+                    conn = get_db_connection()
+                    conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
+                                 (st.session_state['username'], get_somalia_time()))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
+                else:
+                    st.error("❌ Khalad! Uma muuqato inaad hor taagan tahay Gidaarkii shirkadda.")

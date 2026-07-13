@@ -64,46 +64,41 @@ else:
         st.title("📊 Dashboard-ka Maamulka")
         conn = get_db_connection()
         
-        # 1. Furayaasha
         st.subheader("🔑 Xogta Shaqaalaha & Furayaasha")
         if st.checkbox("Muuji Furayaasha Shaqaalaha"):
             all_users = pd.read_sql_query("SELECT username, password FROM users", conn)
             st.table(all_users)
         
-        # 2. Reset Device (Qaybtan waa la hagaajiyay si aysan u dhicin)
         st.subheader("🔄 Reset Moobilka Shaqaalaha")
         try:
             users_df = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)
             emp_to_reset = st.selectbox("Dooro shaqaale", users_df['username'])
             if st.button("Reset Device ID"):
-                try:
-                    conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
-                    conn.commit()
-                    st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
-                except Exception as e:
-                    st.warning("⚠️ Cloud-ka ayaa diiday inuu kaydiyo. Fadlan hubi in Database-kaagu yahay mid la qori karo.")
-        except Exception as e:
+                conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
+                conn.commit()
+                st.success(f"✅ Qalabkii {emp_to_reset} waa la reset-gareeyay.")
+        except:
             st.error("Ma jiro shaqaale la heli karo.")
         
-        # 3. REPORTS & DOWNLOAD
         st.subheader("📋 Reports & Diiwaanka")
         try:
             attendance_data = pd.read_sql_query("SELECT * FROM attendance", conn)
             st.dataframe(attendance_data, use_container_width=True)
-            
             csv = attendance_data.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Diiwaanka (CSV)", csv, "attendance_report.csv", "text/csv")
         except:
             st.warning("Diiwaanka weli xog kuma jiro.")
-        
         conn.close()
 
-    # --- EMPLOYEE VIEW ---
+    # --- EMPLOYEE VIEW (Xawaare la kordhiyay) ---
     else:
         st.title("🏢 Bogga Shaqaalaha")
         st.write(f"Soo dhowoow, {st.session_state['username']}")
         
-        img_file = st.camera_input("Fadlan is-sawir (Selfie)")
+        # Dardargelinta Camera-ha: Waxaan u isticmaalay container si uu browser-ku u qabto si degdeg ah
+        cam_container = st.empty()
+        with cam_container.container():
+            img_file = st.camera_input("Fadlan is-sawir (Selfie)")
         
         if img_file:
             st.success("Sawirkaaga waa la qabtay!")

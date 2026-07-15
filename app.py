@@ -62,8 +62,11 @@ if not st.session_state.get('logged_in', False):
         c.execute("SELECT * FROM users WHERE username=? AND password=?", (user_input, pass_input))
         user = c.fetchone()
         if user:
-            # user: (username, password, role, device_id)
-            username, _, role, stored_device = user
+            # Saxidda Error-ka (Unpacking error prevention)
+            username = user[0]
+            role = user[2]
+            stored_device = user[3] if len(user) > 3 else None
+            
             st.session_state.update({'logged_in': True, 'username': username, 'role': role})
             
             # Xayiraadda qalabka (Shaqaalaha kaliya)

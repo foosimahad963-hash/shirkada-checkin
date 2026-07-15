@@ -12,7 +12,6 @@ import os
 # --- DATABASE ---
 def get_db_connection():
     conn = sqlite3.connect('shirkada.db', check_same_thread=False)
-    # Miis cusub oo sawirada lagu kaydiyo
     conn.execute("CREATE TABLE IF NOT EXISTS attendance (username TEXT, check_in_time TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS user_profiles (username TEXT PRIMARY KEY, ref_image BLOB)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_user ON attendance(username)") 
@@ -20,27 +19,24 @@ def get_db_connection():
 
 # --- SECURITY: Image Comparison ---
 def compare_faces(img_file, username):
-    # Barashada sawirka cusub
     file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
     new_img = cv2.imdecode(file_bytes, 1)
     new_gray = cv2.cvtColor(new_img, cv2.COLOR_BGR2GRAY)
     
-    # Soo saarista sawirka kaydsan ee Admin-ku geliyay
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT ref_image FROM user_profiles WHERE username=?", (username,))
     data = c.fetchone()
     conn.close()
     
-    if not data: return False # Haddii uusan Admin-ku sawirkaaga hore u gelin
+    if not data: return False
     
-    # Barbar dhigga (Simple Template Matching)
     stored_img = cv2.imdecode(np.frombuffer(data[0], np.uint8), 1)
     stored_gray = cv2.cvtColor(stored_img, cv2.COLOR_BGR2GRAY)
     stored_gray = cv2.resize(stored_gray, (new_gray.shape[1], new_gray.shape[0]))
     
     diff = cv2.absdiff(new_gray, stored_gray)
-    return np.mean(diff) < 50 # Haddii uu farqigu ka yar yahay 50, waa isku qof
+    return np.mean(diff) < 50
 
 # --- AUTOMATION: WhatsApp ---
 def send_whatsapp_notification(username, time):
@@ -75,38 +71,52 @@ else:
     # --- ADMIN DASHBOARD ---
     if st.session_state.get('role') == 'admin':
         st.title("📊 Dashboard-ka Maamulka")
-        tab1, tab2, tab3 = st.tabs(["Diiwaanka", "Diiwaangeli Shaqaale", "Maamulka"])
+        conn = get_db_connection()
+        df = pd.read_sql_query("SELECT * FROM attendance", conn)
+        df['check_in_time'] = pd.to_datetime(df['check_in_time'])
+        
+        # KPI Metrics
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Wadarta Check-in", len(df))
+        col2.metric("Maanta", len(df[df['check_in_time'].dt.date == datetime.now().date()]))
+        col3.metric("Shaqaale gaar ah", df['username'].nunique())
+        
+        st.divider()
+        tab1, tab2, tab3 = st.tabs(["Diiwaanka", "Garaafyo", "Maamulka"])
+        
+        with tab1:
+            st.dataframe(df.sort_values(by='check_in_time', ascending=False), use_container_width=True)
+            
         with tab2:
-            st.subheader("📸 Diiwaangeli sawirka shaqaalaha")
+            df['hour'] = df['check_in_time'].dt.hour
+            chart_data = df.groupby('hour').size().reset_index(name='Tirada')
+            st.bar_chart(chart_data.set_index('hour'))
+            
+        with tab3:
+            st.subheader("📸 Diiwaangeli Shaqaale")
             u_name = st.text_input("Magaca shaqaalaha")
             ref_img = st.camera_input("Qaado sawirka asalka ah")
             if ref_img and st.button("Kaydso"):
                 img_bytes = ref_img.getvalue()
-                conn = get_db_connection()
                 conn.execute("INSERT OR REPLACE INTO user_profiles (username, ref_image) VALUES (?, ?)", (u_name, img_bytes))
                 conn.commit()
-                conn.close()
                 st.success("✅ Sawirkii waa la kaydiyay.")
-        
-        with tab1:
-            conn = get_db_connection()
-            df = pd.read_sql_query("SELECT * FROM attendance", conn)
-            st.dataframe(df)
-            conn.close()
+        conn.close()
 
     # --- EMPLOYEE VIEW ---
     else:
         st.title("🏢 Bogga Shaqaalaha")
         img_file = st.camera_input("Fadlan is-sawir si aad u Check-in-gareyso")
         if img_file:
-            if st.button("Xaqiiji"):
+            if st.button("Xaqiiji Check-in"):
                 if compare_faces(img_file, st.session_state['username']):
                     time_now = datetime.now(pytz.timezone('Africa/Mogadishu')).strftime('%Y-%m-%d %H:%M:%S')
                     conn = get_db_connection()
-                    conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", (st.session_state['username'], time_now))
+                    conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
+                                 (st.session_state['username'], time_now))
                     conn.commit()
                     conn.close()
                     send_whatsapp_notification(st.session_state['username'], time_now)
                     st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
                 else:
-                    st.error("❌ Khalad! Sawirku kama dhigna sawirkaadii hore ee Admin-ku kaydiyay.")
+                    st.error("❌ Khalad! Sawirku kama dhigna sawirkaadii diiwaanka.")

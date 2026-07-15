@@ -7,12 +7,10 @@ import pytz
 import cv2
 import numpy as np
 import requests
-import os
 
 # --- DATABASE ---
 def get_db_connection():
     conn = sqlite3.connect('shirkada.db', check_same_thread=False)
-    # Miis cusub oo sawirada iyo users-ka lagu kaydiyo
     conn.execute("CREATE TABLE IF NOT EXISTS attendance (username TEXT, check_in_time TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT, device_id TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS user_profiles (username TEXT PRIMARY KEY, ref_image BLOB)")
@@ -64,17 +62,21 @@ if not st.session_state.get('logged_in', False):
         c.execute("SELECT * FROM users WHERE username=? AND password=?", (user_input, pass_input))
         user = c.fetchone()
         if user:
-            # role = user[2] (kaas oo ah admin/employee), device_id = user[3]
-            st.session_state.update({'logged_in': True, 'username': user[0], 'role': user[2]})
-            # LOGIC CUSUB: Admin-ka laguma xidhayo qalabka, shaqaalaha waa lagu xidhayaa
-            if user[2] != 'admin':
-                stored_device = user[3]
+            # user: (username, password, role, device_id)
+            username, _, role, stored_device = user
+            st.session_state.update({'logged_in': True, 'username': username, 'role': role})
+            
+            # Xayiraadda qalabka (Shaqaalaha kaliya)
+            if role != 'admin':
                 if stored_device is None:
-                    c.execute("UPDATE users SET device_id=? WHERE username=?", (st.session_state['device_id'], user_input))
+                    c.execute("UPDATE users SET device_id=? WHERE username=?", (st.session_state['device_id'], username))
                     conn.commit()
                 elif stored_device != st.session_state['device_id']:
-                    st.error("⚠️ Moobilkan laguma oggola!"); st.stop()
+                    st.error("⚠️ Moobilkan laguma oggola!")
+                    st.stop()
             st.rerun()
+        else:
+            st.error("Magac ama fure khaldan.")
         conn.close()
 else:
     if st.sidebar.button("Ka Bax"): st.session_state.clear(); st.rerun()
@@ -86,32 +88,31 @@ else:
         df = pd.read_sql_query("SELECT * FROM attendance", conn)
         df['check_in_time'] = pd.to_datetime(df['check_in_time'])
         
-        # Tabs-ka Maamulka
-        tab1, tab2, tab3, tab4 = st.tabs(["Diiwaanka", "Diiwaangeli Shaqaale", "Garaafyo", "Maamulka Qalabka"])
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Wadarta", len(df))
+        col2.metric("Maanta", len(df[df['check_in_time'].dt.date == datetime.now().date()]))
+        col3.metric("Shaqaale", df['username'].nunique())
+        
+        st.divider()
+        tab1, tab2, tab3, tab4 = st.tabs(["Diiwaanka", "Diiwaangeli", "Garaafyo", "Maamulka"])
         
         with tab1:
-            st.dataframe(df)
-            
+            st.dataframe(df.sort_values(by='check_in_time', ascending=False), use_container_width=True)
         with tab2:
-            st.subheader("📸 Diiwaangeli sawirka shaqaalaha")
             u_name = st.text_input("Magaca shaqaalaha")
-            ref_img = st.camera_input("Qaado sawirka asalka ah")
+            ref_img = st.camera_input("Sawirka Asalka")
             if ref_img and st.button("Kaydso"):
                 conn.execute("INSERT OR REPLACE INTO user_profiles (username, ref_image) VALUES (?, ?)", (u_name, ref_img.getvalue()))
                 conn.commit()
-                st.success("✅ Sawirkii waa la kaydiyay.")
-        
+                st.success("✅ Sawirkii waa la diiwaangeliyay.")
         with tab3:
-            st.subheader("📈 Garaafyada Check-in-ka")
             df['hour'] = df['check_in_time'].dt.hour
             chart_data = df.groupby('hour').size().reset_index(name='Tirada')
             st.bar_chart(chart_data.set_index('hour'))
-            
         with tab4:
-            st.subheader("🔄 Reset Device ID")
             users_list = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)['username'].tolist()
             emp_to_reset = st.selectbox("Dooro shaqaale", users_list)
-            if st.button("Reset Qalabka"):
+            if st.button("Reset Device ID"):
                 conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
                 conn.commit()
                 st.success(f"✅ Qalabkii {emp_to_reset} waa la fasaxay.")
@@ -131,4 +132,4 @@ else:
                 send_whatsapp_notification(st.session_state['username'], time_now)
                 st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
             else:
-                st.error("❌ Khalad! Sawirku kama dhigna sawirkaadii hore ee Admin-ku kaydiyay.")
+                st.error("❌ Khalad! Sawirku kama dhigna sawirkaadii diiwaanka.")

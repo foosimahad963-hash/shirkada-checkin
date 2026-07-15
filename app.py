@@ -64,18 +64,27 @@ if not st.session_state.get('logged_in', False):
         c.execute("SELECT * FROM users WHERE username=? AND password=?", (user_input, pass_input))
         user = c.fetchone()
         if user:
-            role, stored_device = user[2], user[3]
+            # user[0]=username, user[1]=password, user[2]=role, user[3]=device_id
+            role = user[2]
+            stored_device = user[3]
             st.session_state.update({'logged_in': True, 'username': user[0], 'role': role})
-            if role != 'admin':
+            
+            # LOGIC CUSUB:
+            if role != 'admin': # Shaqaalaha kaliya ayaa la xirayaa
                 if stored_device is None:
+                    # Haddii ay tahay markii ugu horreysay, kaydi device_id-ga
                     c.execute("UPDATE users SET device_id=? WHERE username=?", (st.session_state['device_id'], user_input))
                     conn.commit()
                 elif stored_device != st.session_state['device_id']:
-                    st.error("⚠️ Moobilkan laguma oggola!"); st.stop()
+                    # Haddii uu qalabku ka duwan yahay kii hore, diid
+                    st.error("⚠️ Moobilkan laguma oggola! Fadlan isticmaal qalabkaaga saxda ah.")
+                    st.stop()
+            
+            # Admin-ka wax xannibaad ah laguma samaynayo
             st.rerun()
+        else:
+            st.error("Magac ama fure khaldan.")
         conn.close()
-else:
-    if st.sidebar.button("Ka Bax"): st.session_state.clear(); st.rerun()
 
     # --- ADMIN DASHBOARD ---
     if st.session_state.get('role') == 'admin':

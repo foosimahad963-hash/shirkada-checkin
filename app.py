@@ -7,20 +7,23 @@ import pytz
 import cv2
 import numpy as np
 import requests
-import face_recognition # Waa inuu ku jiraa requirements.txt
 
-# --- DATABASE (Scalability: Indexed columns) ---
+# --- DATABASE ---
 def get_db_connection():
     conn = sqlite3.connect('shirkada.db', check_same_thread=False)
     conn.execute("CREATE TABLE IF NOT EXISTS attendance (username TEXT, check_in_time TEXT)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_user ON attendance(username)") 
     return conn
 
-# --- AUTOMATION: WhatsApp Notification ---
+# --- AUTOMATION: WhatsApp (Cusbooneysiin) ---
 def send_whatsapp_notification(username, time):
-    api_url = "https://api.ultramsg.com/instanceXXXXX/messages/chat" 
+    # Xogtaada saxda ah ee UltraMsg
+    instance_id = "instance184936"
+    token = "spk55ant79w0xv3x"
+    api_url = f"https://api.ultramsg.com/{instance_id}/messages/chat" 
+    
     payload = {
-        "token": "Geli_Token_kaaga_halkan",
+        "token": token,
         "to": "+252637281967", 
         "body": f"⚠️ Digniin: Shaqaale {username} wuxuu Check-in sameeyay wakhtiga: {time}"
     }
@@ -29,36 +32,16 @@ def send_whatsapp_notification(username, time):
     except:
         pass
 
-# --- SECURITY: Face Matching + Wall Check ---
-def is_valid_checkin(img_file, username):
-    # 1. Loading images
+# --- SECURITY: Wall Recognition ---
+def is_valid_wall(img_file):
     file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
     user_img = cv2.imdecode(file_bytes, 1)
-    user_rgb = cv2.cvtColor(user_img, cv2.COLOR_BGR2RGB)
-    
-    # 2. Gidaar hubin (Canny)
     gray = cv2.cvtColor(user_img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 100, 200)
-    is_wall_valid = np.mean(edges) < 50
-    
-    # 3. Face Matching
-    try:
-        stored_image_path = f"images/{username}.jpg"
-        stored_img = face_recognition.load_image_file(stored_image_path)
-        
-        user_encodings = face_recognition.face_encodings(user_rgb)
-        stored_encodings = face_recognition.face_encodings(stored_img)
-        
-        if len(user_encodings) > 0 and len(stored_encodings) > 0:
-            results = face_recognition.compare_faces([stored_encodings[0]], user_encodings[0])
-            return is_wall_valid and results[0]
-        return False
-    except:
-        return False
+    return np.mean(edges) < 50 
 
 # --- APP SETUP ---
 st.set_page_config(page_title="Nidaamka Shaqaalaha", page_icon="🏢")
-
 if 'device_id' not in st.session_state:
     st.session_state['device_id'] = str(uuid.uuid4())
 
@@ -67,7 +50,6 @@ if not st.session_state.get('logged_in', False):
     st.title("🔐 Fadlan Gal Nidaamka")
     user_input = st.text_input("Magaca")
     pass_input = st.text_input("Furaha", type="password")
-    
     if st.button("Gal"):
         conn = get_db_connection()
         c = conn.cursor()
@@ -85,8 +67,6 @@ if not st.session_state.get('logged_in', False):
                     st.error("⚠️ Moobilkan laguma oggola!")
                     st.stop()
             st.rerun()
-        else:
-            st.error("Magaca ama furaha ayaa qaldan!")
         conn.close()
 
 else:
@@ -94,37 +74,42 @@ else:
         st.session_state.clear()
         st.rerun()
 
-    # --- ADMIN VIEW ---
+    # --- ADMIN DASHBOARD ---
     if st.session_state.get('role') == 'admin':
         st.title("📊 Dashboard-ka Maamulka")
         conn = get_db_connection()
-        tab1, tab2 = st.tabs(["Diiwaanka Shaqada", "Maamulka Shaqaalaha"])
+        df = pd.read_sql_query("SELECT * FROM attendance", conn)
+        df['check_in_time'] = pd.to_datetime(df['check_in_time'])
         
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Wadarta Check-in", len(df))
+        col2.metric("Maanta", len(df[df['check_in_time'].dt.date == datetime.now().date()]))
+        col3.metric("Shaqaale gaar ah", df['username'].nunique())
+        
+        st.divider()
+        tab1, tab2, tab3 = st.tabs(["Diiwaanka", "Garaafyo", "Maamulka"])
         with tab1:
-            attendance_data = pd.read_sql_query("SELECT * FROM attendance ORDER BY check_in_time DESC", conn)
-            st.dataframe(attendance_data, use_container_width=True)
-            csv = attendance_data.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download CSV", csv, "attendance.csv", "text/csv")
-            
+            st.dataframe(df.sort_values(by='check_in_time', ascending=False), use_container_width=True)
         with tab2:
-            st.subheader("🔄 Reset Qalabka Shaqaalaha")
+            df['hour'] = df['check_in_time'].dt.hour
+            chart_data = df.groupby('hour').size().reset_index(name='Tirada')
+            st.bar_chart(chart_data.set_index('hour'))
+        with tab3:
             users_list = pd.read_sql_query("SELECT username FROM users WHERE role='employee'", conn)['username'].tolist()
             emp_to_reset = st.selectbox("Dooro shaqaale", users_list)
             if st.button("Reset Device ID"):
                 conn.execute("UPDATE users SET device_id=NULL WHERE username=?", (emp_to_reset,))
                 conn.commit()
-                st.success(f"✅ Qalabkii {emp_to_reset} waa la fasaxay.")
+                st.success("✅ Waa la fasaxay.")
         conn.close()
 
     # --- EMPLOYEE VIEW ---
     else:
         st.title("🏢 Bogga Shaqaalaha")
-        st.write(f"Soo dhowoow, {st.session_state['username']}")
-        img_file = st.camera_input("Fadlan is-sawir adigoo hor taagan Goobta")
-        
+        img_file = st.camera_input("Fadlan is-sawir (Selfie)")
         if img_file:
             if st.button("Xaqiiji Check-in"):
-                if is_valid_checkin(img_file, st.session_state['username']):
+                if is_valid_wall(img_file):
                     time_now = datetime.now(pytz.timezone('Africa/Mogadishu')).strftime('%Y-%m-%d %H:%M:%S')
                     conn = get_db_connection()
                     conn.execute("INSERT INTO attendance (username, check_in_time) VALUES (?, ?)", 
@@ -132,6 +117,6 @@ else:
                     conn.commit()
                     conn.close()
                     send_whatsapp_notification(st.session_state['username'], time_now)
-                    st.success("✅ Waji iyo Goob waa la aqoonsaday! Check-in-kaaga waa diiwaan.")
+                    st.success("✅ Check-in-kaaga waa la diiwaan geliyay!")
                 else:
-                    st.error("❌ Khalad! Wajigaaga ama Goobta laguma aqoonsan.")
+                    st.error("❌ Khalad! Ma tihid meeshii saxda ahayd.")
